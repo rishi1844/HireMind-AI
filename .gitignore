@@ -1,0 +1,29 @@
+# ── Node / Next.js ────────────────────────────────────────────────
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/.env.*.local
+
+# ── Java / Maven ──────────────────────────────────────────────────
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+backend/.env
+*.class
+*.jar
+*.war
+
+# ── IDE ───────────────────────────────────────────────────────────
+.idea/
+*.iml
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ── Docker ────────────────────────────────────────────────────────
+.dockerignore
+
+# ── Logs ──────────────────────────────────────────────────────────
+*.log
+logs/

@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  # ── MySQL Database ────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: resumeai-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: resume_ai_db
+      MYSQL_USER: resumeai
+      MYSQL_PASSWORD: resumeai123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # ── Spring Boot Backend ───────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: resumeai-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/resume_ai_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: resumeai
+      SPRING_DATASOURCE_PASSWORD: resumeai123
+      JWT_SECRET: ${JWT_SECRET:-changeThisToA256BitSecretInProduction}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-your_gemini_api_key_here}
+      FRONTEND_URL: http://localhost:3000
+
+  # ── Next.js Frontend ──────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: resumeai-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080/api
+
+volumes:
+  mysql_data:
