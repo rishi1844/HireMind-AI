@@ -284,6 +284,8 @@ export function Navbar({ onMenuClick, title = "Dashboard" }: Props) {
           </AnimatePresence>
         </div>
 
+        {/* mysql://root:tJmCRVhfwGtJSbhDbOpvebpXbfOPSIgN@maglev.proxy.rlwy.net:37589/railway */}
+
         <div className="flex items-center gap-2">
           <button onClick={() => openPanel("search")} className={cn(iconButtonClass, "md:hidden")}>
             <Search className="h-5 w-5" />
