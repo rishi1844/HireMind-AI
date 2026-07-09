@@ -1,0 +1,227 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                        BigInt             @id @default(autoincrement())
+  createdAt                 DateTime?          @map("created_at") @db.DateTime(6)
+  email                     String             @unique(map: "UK_6dotkott2kjsp8vw4d0m25fb7") @db.VarChar(100)
+  name                      String             @db.VarChar(100)
+  password                  String             @db.VarChar(255)
+  profilePicture            String?            @map("profile_picture") @db.MediumText
+  profilePictureUrl         String?            @map("profile_picture_url") @db.VarChar(500)
+  updatedAt                 DateTime?          @map("updated_at") @db.DateTime(6)
+  bio                       String?            @db.Text
+  headline                  String?            @db.VarChar(120)
+  mobile                    String?            @db.VarChar(20)
+  emailOtp                  String?            @map("email_otp") @db.VarChar(6)
+  emailOtpExpiresAt         DateTime?          @map("email_otp_expires_at") @db.DateTime(6)
+  emailVerified             Boolean            @default(false) @map("email_verified")
+  passwordResetOtp          String?            @map("password_reset_otp") @db.VarChar(6)
+  passwordResetOtpExpiresAt DateTime?          @map("password_reset_otp_expires_at") @db.DateTime(6)
+  provider                  String             @map("auth_provider") @db.VarChar(30)
+  plan                      String             @default("free") @db.VarChar(20)
+  planExpiresAt             DateTime?          @map("plan_expires_at") @db.DateTime(6)
+
+  builtResumes              BuiltResume[]
+  interviewSessions         InterviewSession[]
+  resumes                   Resume[]
+  tokenUsage                TokenUsage[]
+  refreshTokens             RefreshToken[]
+  deviceAnalytics           DeviceAnalytics[]
+
+  @@map("users")
+}
+
+model Resume {
+  id                 BigInt               @id @default(autoincrement())
+  extractedText      String?              @map("extracted_text") @db.LongText
+  contentHash        String?              @map("content_hash") @db.VarChar(64)
+  fileName           String               @map("file_name") @db.VarChar(255)
+  fileSize           BigInt?              @map("file_size")
+  filePath           String?              @map("file_path") @db.VarChar(500)
+  uploadedAt         DateTime?            @map("uploaded_at") @db.DateTime(6)
+  userId             BigInt               @map("user_id")
+  source_type        resumes_source_type?
+  structured_content String?              @db.LongText
+  template_id        BigInt?
+  analysisResult     AnalysisResult?
+  interviewSessions  InterviewSession[]
+  resume_sections    resume_sections[]
+  user               User                 @relation(fields: [userId], references: [id], onUpdate: Restrict, map: "FK340nuaivxiy99hslr3sdydfvv")
+  resume_templates   resume_templates?    @relation(fields: [template_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "FKhy6oj3o65eicd3a0k5o97b4jt")
+
+  @@index([userId], map: "FK340nuaivxiy99hslr3sdydfvv")
+  @@index([template_id], map: "FKhy6oj3o65eicd3a0k5o97b4jt")
+  @@index([userId, contentHash])
+  @@map("resumes")
+}
+
+model AnalysisResult {
+  id                 BigInt    @id @default(autoincrement())
+  analyzedAt         DateTime? @map("analyzed_at") @db.DateTime(6)
+  atsScore           Int?      @map("ats_score")
+  improvements       String?   @db.LongText
+  jobRoles           String?   @map("job_roles") @db.LongText
+  projectSuggestions String?   @map("project_suggestions") @db.LongText
+  rawAnalysis        String?   @map("raw_analysis") @db.LongText
+  strengths          String?   @db.LongText
+  weaknesses         String?   @db.LongText
+  resumeId           BigInt    @unique(map: "UK_3lx5nsm2wn88pj6685h4yqr6q") @map("resume_id")
+  quickPracticeQa    String?   @map("quick_practice_qa") @db.LongText
+  issueAnnotations   String?   @map("issue_annotations") @db.LongText
+  categories         String?   @db.LongText
+  bulletAnalysis     String?   @map("bullet_analysis") @db.LongText
+  repeatedWords      String?   @map("repeated_words") @db.LongText
+  industryKeywords   String?   @map("industry_keywords") @db.LongText
+  resume             Resume    @relation(fields: [resumeId], references: [id], onUpdate: Restrict, map: "FKd18rhc9klmm40y3de93iuvn56")
+
+  @@map("analysis_results")
+}
+
+
+model BuiltResume {
+  id         BigInt    @id @default(autoincrement())
+  createdAt  DateTime? @map("created_at") @db.DateTime(6)
+  resumeData String    @map("resume_data") @db.LongText
+  templateId String    @map("template_id") @db.VarChar(50)
+  title      String    @db.VarChar(200)
+  updatedAt  DateTime? @map("updated_at") @db.DateTime(6)
+  userId     BigInt    @map("user_id")
+  user       User      @relation(fields: [userId], references: [id], onUpdate: Restrict, map: "FKjmauk50cpbf4356sr25s7tyl8")
+
+  @@index([userId], map: "FKjmauk50cpbf4356sr25s7tyl8")
+  @@map("built_resumes")
+}
+
+model InterviewSession {
+  id                     BigInt        @id @default(autoincrement())
+  createdAt              DateTime?     @map("created_at") @db.DateTime(6)
+  overallScore           Float?        @map("overall_score")
+  questionsAnswered      Int?          @map("questions_answered")
+  sessionTitle           String?       @map("session_title") @db.VarChar(255)
+  resumeId               BigInt?       @map("resume_id")
+  userId                 BigInt        @map("user_id")
+  resumeFileNameSnapshot String?       @map("resume_file_name") @db.VarChar(255)
+  qaList                 InterviewQA[]
+  resume                 Resume?       @relation(fields: [resumeId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "FKhresfe6p1s53klvmqhxxissa2")
+  user                   User          @relation(fields: [userId], references: [id], onUpdate: Restrict, map: "FKoa5rgsdu7rqa8y74yph1fuqe5")
+
+  @@index([resumeId], map: "FKhresfe6p1s53klvmqhxxissa2")
+  @@index([userId], map: "FKoa5rgsdu7rqa8y74yph1fuqe5")
+  @@map("interview_sessions")
+}
+
+model InterviewQA {
+  id             BigInt           @id @default(autoincrement())
+  answer         String?          @db.Text
+  improvedAnswer String?          @map("improved_answer") @db.Text
+  inputMode      String?          @map("input_mode") @db.VarChar(20)
+  orderIndex     Int?             @map("order_index")
+  question       String           @db.Text
+  questionType   String?          @map("question_type") @db.VarChar(50)
+  score          Float?
+  strengths      String?          @db.Text
+  weaknesses     String?          @db.Text
+  sessionId      BigInt           @map("session_id")
+  skipped        Boolean?         @map("is_skipped") @db.Bit(1)
+  session        InterviewSession @relation(fields: [sessionId], references: [id], onUpdate: Restrict, map: "FKxgmugypx8thuwhye6k8gxgg3")
+
+  @@index([sessionId], map: "FKxgmugypx8thuwhye6k8gxgg3")
+  @@map("interview_qa")
+}
+
+model resume_sections {
+  id            BigInt  @id @default(autoincrement())
+  content       String? @db.LongText
+  section_order Int?
+  section_title String  @db.VarChar(255)
+  section_type  String  @db.VarChar(60)
+  resume_id     BigInt
+  resumes       Resume  @relation(fields: [resume_id], references: [id], onUpdate: Restrict, map: "FK2qre6dt8fh13yh1q1pckd7eu1")
+
+  @@index([resume_id], map: "FK2qre6dt8fh13yh1q1pckd7eu1")
+}
+
+model resume_templates {
+  id            BigInt    @id @default(autoincrement())
+  created_at    DateTime? @db.DateTime(6)
+  description   String?   @db.VarChar(400)
+  display_label String    @db.VarChar(120)
+  layout_style  String?   @db.VarChar(120)
+  palette       String?   @db.VarChar(120)
+  template_name String    @unique(map: "UK_1m78oorga064i02bv4qhsdpe") @db.VarChar(80)
+  resumes       Resume[]
+}
+
+enum resumes_source_type {
+  UPLOADED
+  MANUAL
+}
+
+model AdminUser {
+  id           BigInt    @id @default(autoincrement())
+  email        String    @unique @db.VarChar(100)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  name         String    @default("Admin") @db.VarChar(100)
+  createdAt    DateTime? @default(now()) @map("created_at") @db.DateTime(6)
+
+  @@map("admin_users")
+}
+
+model TokenUsage {
+  id               BigInt    @id @default(autoincrement())
+  userId           BigInt?   @map("user_id")
+  model            String    @default("gpt") @db.VarChar(20)
+  feature          String    @db.VarChar(50)
+  promptTokens     Int       @default(0) @map("prompt_tokens")
+  completionTokens Int       @default(0) @map("completion_tokens")
+  totalTokens      Int       @default(0) @map("total_tokens")
+  createdAt        DateTime? @default(now()) @map("created_at") @db.DateTime(6)
+  user             User?     @relation(fields: [userId], references: [id], onDelete: SetNull, map: "fk_token_usage_user")
+
+  @@index([userId], map: "idx_tu_user")
+  @@index([model], map: "idx_tu_model")
+  @@index([feature], map: "idx_tu_feature")
+  @@index([createdAt], map: "idx_tu_created")
+  @@map("token_usage")
+}
+
+// ─── Phase 2.3: JWT Refresh Tokens ───────────────────────────────────────────
+model RefreshToken {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt   @map("user_id")
+  token     String   @unique @db.VarChar(255)
+  expiresAt DateTime @map("expires_at") @db.DateTime(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, map: "fk_refresh_token_user")
+
+  @@index([userId], map: "idx_rt_user")
+  @@index([expiresAt], map: "idx_rt_expires")
+  @@map("refresh_tokens")
+}
+
+model DeviceAnalytics {
+  id         BigInt   @id @default(autoincrement())
+  userId     BigInt?  @map("user_id")
+  deviceType String   @map("device_type") @db.VarChar(20)
+  os         String   @db.VarChar(30)
+  browser    String   @db.VarChar(30)
+  action     String   @db.VarChar(50)
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  userAgent  String?  @map("user_agent") @db.Text
+  createdAt  DateTime @default(now()) @map("created_at") @db.DateTime(6)
+
+  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade, map: "fk_device_analytics_user")
+
+  @@index([userId], map: "idx_da_user")
+  @@index([deviceType], map: "idx_da_device_type")
+  @@index([createdAt], map: "idx_da_created_at")
+  @@map("device_analytics")
+}
+

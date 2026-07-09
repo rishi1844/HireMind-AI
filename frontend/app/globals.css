@@ -250,3 +250,151 @@ background: linear-gradient(
 .voice-bar:nth-child(3) { animation-delay: 0.2s; }
 .voice-bar:nth-child(4) { animation-delay: 0.3s; }
 .voice-bar:nth-child(5) { animation-delay: 0.4s; }
+
+/* ── Template Editor — Range Slider Thumb ── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #7c3aed;
+  border: 2px solid #a78bfa;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  background: #6d28d9;
+  box-shadow: 0 0 0 5px rgba(124, 58, 237, 0.3);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #7c3aed;
+  border: 2px solid #a78bfa;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+input[type="range"]::-moz-range-thumb:hover {
+  background: #6d28d9;
+  box-shadow: 0 0 0 5px rgba(124, 58, 237, 0.3);
+}
+
+/* ── Template Editor — Custom badge gradient border ── */
+.editor-badge {
+  background: linear-gradient(135deg, rgba(124,58,237,0.2), rgba(139,92,246,0.1));
+  border: 1px solid rgba(124,58,237,0.35);
+}
+
+
+/* ── PDF Print Export via window.print() ── */
+
+/**
+ * The ResumeBuilderShell portals a full-scale (scale=1) resume into:
+ *   <body>
+ *     ...app...
+ *     <div id="print-root">          ← hidden by default
+ *       <div id="resume-print">      ← TemplateRenderer at scale=1
+ *
+ * On print: hide everything except #print-root, show it at A4 width,
+ * zero margins, exact background colours.
+ */
+
+#print-root {
+  display: none !important;
+}
+
+@media print {
+  /* 1. Hide the entire Next.js app shell */
+  body > *:not(#print-root) {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* 2. Reset html/body so the resume fills the page naturally */
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 210mm !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* 3. Show and position the print root */
+  #print-root {
+    display: block !important;
+    visibility: visible !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 210mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    transform: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  /* 4. The inner resume-print div (TemplateRenderer) */
+  #resume-print,
+  #resume-print * {
+    visibility: visible !important;
+    overflow: visible !important;
+  }
+
+  /* 5. Force all background colours and images to print
+        (Chrome requires -webkit-print-color-adjust) */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* 6. Profile avatar: ensure circular clipping prints correctly */
+  [data-avatar] {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    border-radius: 50% !important;
+    overflow: hidden !important;
+    background-clip: border-box !important;
+  }
+
+  /* 7. Page setup: A4 portrait, zero margin (resume handles its own padding) */
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+
+  /* 8. Suppress unwanted page breaks inside resume elements */
+  header,
+  section,
+  article,
+  li,
+  p {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+

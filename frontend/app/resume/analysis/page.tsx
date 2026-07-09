@@ -28,18 +28,37 @@ function AnalysisContent() {
   const id = searchParams.get("id");
   const [data, setData] = useState<AnalysisResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reAnalyzing, setReAnalyzing] = useState(false);
+
+  const loadAnalysis = (analysisId: number) => {
+    return resumeService
+      .getAnalysis(analysisId)
+      .then((response) => setData(response.data))
+      .catch(() => toast.error("Failed to load analysis"));
+  };
+
+  const handleReAnalyze = async () => {
+    if (!data?.resumeId) return;
+    setReAnalyzing(true);
+    try {
+      const res = await resumeService.analyze(data.resumeId, "gpt", true);
+      await loadAnalysis(res.data.id);
+      toast.success("Re-analysis complete!");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Re-analysis failed. Try again.");
+    } finally {
+      setReAnalyzing(false);
+    }
+  };
 
   useEffect(() => {
     if (!id) {
       router.push("/resume/upload");
       return;
     }
-
-    resumeService
-      .getAnalysis(Number(id))
-      .then((response) => setData(response.data))
-      .catch(() => toast.error("Failed to load analysis"))
-      .finally(() => setLoading(false));
+    setLoading(true);
+    loadAnalysis(Number(id)).finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, router]);
 
   if (loading) {
@@ -83,12 +102,31 @@ function AnalysisContent() {
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row">
+          {/* Re-analyze button */}
+          <button
+            onClick={handleReAnalyze}
+            disabled={reAnalyzing}
+            className="flex items-center justify-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm font-medium text-amber-300 transition-all hover:bg-amber-500/20 disabled:opacity-50"
+          >
+            {reAnalyzing ? (
+              <><span className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400/30 border-t-amber-400" /> Re-analyzing…</>
+            ) : (
+              <><RefreshCw className="h-4 w-4" /> Re-analyze</>
+            )}
+          </button>
           <Link
             href="/resume/upload"
             className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 px-4 py-3 text-sm text-slate-300 transition-all hover:bg-white/5 hover:text-white"
           >
             <RefreshCw className="h-4 w-4" />
             Analyze New
+          </Link>
+          <Link
+            href={`/resume/review?resumeId=${data.resumeId}&id=${id}`}
+            className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-300 transition-all hover:bg-emerald-500/20"
+          >
+            <Sparkles className="h-4 w-4" />
+            Inline Review
           </Link>
           <Link
             href={`/interview?resumeId=${data.resumeId}`}
@@ -114,13 +152,14 @@ function AnalysisContent() {
               Your resume scores <span style={{ color: getScoreColor(data.atsScore) }}>{data.atsScore}/100</span> on ATS
             </h3>
             <p className="mb-6 leading-relaxed text-slate-400">
-              {data.atsScore >= 80
-                ? "Your resume is already in strong shape. Use the suggestions below to polish positioning and interview readiness."
-                : data.atsScore >= 60
-                  ? "You have a solid baseline. Tightening weak spots and practicing your positioning should raise interview quality quickly."
-                  : "Your resume needs a stronger structure and clearer signals. Start with the improvements below, then use quick practice mode."}
+              {data.atsScore >= 85
+                ? "Excellent resume — very well optimized. Minor polish is all that's needed."
+                : data.atsScore >= 70
+                  ? "Good resume. A few targeted improvements could push you into the top tier."
+                  : data.atsScore >= 55
+                    ? "Average resume. Work on the flagged sections — especially achievements and keywords."
+                    : "Needs significant work. Focus on the high-severity issues first."}
             </p>
-
             <div className="grid grid-cols-3 gap-4">
               {[
                 { label: "Strengths", count: data.strengths.length, color: "#10b981" },
@@ -128,9 +167,7 @@ function AnalysisContent() {
                 { label: "Tips", count: data.improvements.length, color: "#22d3ee" },
               ].map((item) => (
                 <div key={item.label} className="rounded-2xl border border-white/8 px-4 py-3 text-center glass">
-                  <p className="text-2xl font-display font-bold" style={{ color: item.color }}>
-                    {item.count}
-                  </p>
+                  <p className="text-2xl font-display font-bold" style={{ color: item.color }}>{item.count}</p>
                   <p className="mt-0.5 text-xs text-slate-400">{item.label}</p>
                 </div>
               ))}
@@ -138,6 +175,44 @@ function AnalysisContent() {
           </div>
         </div>
       </motion.div>
+
+      {/* Section Scores Breakdown */}
+      {(data as any).sectionScores && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.14 }}
+          className="rounded-[2rem] border border-white/8 p-6 glass-card"
+        >
+          <h3 className="mb-5 font-display text-lg font-semibold text-white">Score Breakdown</h3>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { key: "contactInfo",    label: "Contact Info",     max: 5  },
+              { key: "summary",        label: "Summary",          max: 10 },
+              { key: "workExperience", label: "Work Experience",  max: 25 },
+              { key: "skills",         label: "Skills",           max: 20 },
+              { key: "education",      label: "Education",        max: 10 },
+              { key: "keywords",       label: "Keywords & ATS",   max: 20 },
+              { key: "formatting",     label: "Formatting",       max: 10 },
+            ].map(({ key, label, max }) => {
+              const val = ((data as any).sectionScores as Record<string, number>)[key] ?? 0;
+              const pct = Math.round((val / max) * 100);
+              const col = pct >= 75 ? "#10b981" : pct >= 45 ? "#f59e0b" : "#f43f5e";
+              return (
+                <div key={key} className="rounded-2xl border border-white/8 p-4">
+                  <div className="mb-2 flex items-center justify-between text-xs">
+                    <span className="text-slate-300 font-medium">{label}</span>
+                    <span className="font-mono font-bold" style={{ color: col }}>{val}/{max}</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, backgroundColor: col }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
 
       <div className="grid gap-5">
         {sections.map((section, index) => (

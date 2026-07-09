@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Video Frame Inspector</title>
+  <style>
+    body {
+      background: #0f172a;
+      color: #f1f5f9;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem;
+    }
+    video {
+      width: 640px;
+      height: 360px;
+      object-fit: cover;
+      border: 2px solid #38bdf8;
+      border-radius: 1rem;
+      margin-bottom: 1rem;
+    }
+    .controls {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    button {
+      background: #0284c7;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover {
+      background: #0369a1;
+    }
+    .info {
+      font-size: 1.2rem;
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Video Frame Inspector</h1>
+  <video id="inspector-video" src="/video/female-ai.mp4" muted preload="auto" playsinline></video>
+  <div class="info">Current Time: <span id="current-time">0.0</span>s</div>
+  <div class="controls">
+    <button onclick="seekTo(0.0)">0.0s</button>
+    <button onclick="seekTo(1.0)">1.0s</button>
+    <button onclick="seekTo(2.0)">2.0s</button>
+    <button onclick="seekTo(3.0)">3.0s</button>
+    <button onclick="seekTo(4.0)">4.0s</button>
+    <button onclick="seekTo(5.0)">5.0s</button>
+    <button onclick="seekTo(6.0)">6.0s</button>
+    <button onclick="seekTo(7.0)">7.0s</button>
+    <button onclick="seekTo(8.0)">8.0s</button>
+  </div>
+  <script>
+    const video = document.getElementById('inspector-video');
+    const timeDisplay = document.getElementById('current-time');
+
+    video.addEventListener('seeked', () => {
+      timeDisplay.textContent = video.currentTime.toFixed(2);
+    });
+
+    function seekTo(time) {
+      video.currentTime = time;
+    }
+  </script>
+</body>
+</html>

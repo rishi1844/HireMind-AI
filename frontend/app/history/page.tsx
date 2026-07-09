@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
-import { ArrowRight, BarChart3, Clock, FileText, Mic, Star, Trash2, type LucideIcon } from "lucide-react";
+import { ArrowRight, BarChart3, Clock, Download, FileText, Mic, Star, Trash2, type LucideIcon } from "lucide-react";
 import toast from "react-hot-toast";
 import { AppShell } from "@/components/layout/AppShell";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { HistoryItem, SessionResponse } from "@/lib/types";
 import { formatDate, getScoreColor } from "@/lib/utils";
-import { interviewService, resumeService } from "@/services/api";
+import { interviewService, resumeService, resolveAssetUrl } from "@/services/api";
+import { ScoreHistoryChart } from "@/components/resume/ScoreHistoryChart";
 
 type Tab = "resumes" | "interviews";
 
@@ -103,6 +104,22 @@ export default function HistoryPage() {
           </Link>
         </motion.div>
 
+        {/* Score History Chart */}
+        {analyzedResumes.length >= 2 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.06 }}
+            className="rounded-[1.75rem] border border-white/8 p-5 glass-card"
+          >
+            <ScoreHistoryChart history={analyzedResumes.map(r => ({
+              analyzedAt: r.analyzedAt ?? null,
+              atsScore: r.atsScore ?? null,
+              fileName: r.fileName,
+            }))} />
+          </motion.div>
+        )}
+
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -181,6 +198,18 @@ export default function HistoryPage() {
                           </p>
                           <p className="text-xs text-slate-500">ATS score</p>
                         </div>
+                        {(item as any).filePath && (
+                          <a
+                            href={resolveAssetUrl((item as any).filePath)}
+                            download={item.fileName}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Download original PDF"
+                            className="flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-500/20 bg-emerald-500/5 text-emerald-400 transition-colors hover:bg-emerald-500/10"
+                          >
+                            <Download className="h-4 w-4" />
+                          </a>
+                        )}
                         <Link
                           href={`/resume/analysis?id=${item.analysisId}`}
                           className="flex items-center gap-2 rounded-2xl border border-violet-500/20 px-4 py-2 text-sm text-violet-300 transition-colors hover:bg-violet-500/10"
@@ -259,11 +288,11 @@ export default function HistoryPage() {
                           </p>
                         </div>
                         <Link
-                          href={`/interview/history?sessionId=${session.id}`}
+                          href={`/history/interview/${session.id}`}
                           className="flex items-center gap-2 rounded-2xl border border-cyan-500/20 px-4 py-2 text-sm text-cyan-300 transition-colors hover:bg-cyan-500/10"
                         >
                           <BarChart3 className="h-4 w-4" />
-                          Review Q&A
+                          Full Replay
                         </Link>
                         <button
                           onClick={() =>

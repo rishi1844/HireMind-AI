@@ -1,32 +1,37 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, Bell, Brain, FileText, Loader2, Menu, Mic, Search, Sparkles } from "lucide-react";
+import {
+  Bell,
+  ChevronDown,
+  FileText,
+  LayoutDashboard,
+  Loader2,
+  Menu,
+  Mic,
+  Sparkles,
+  Upload,
+  Wand2,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { BrandWordmark } from "@/components/ui/BrandWordmark";
 import { BRAND } from "@/lib/brand";
+import { isActiveRoute } from "@/lib/routes";
 import { useAuthStore } from "@/lib/store";
 import { HistoryItem, SessionResponse } from "@/lib/types";
-import { interviewService, resumeService } from "@/services/api";
-import { cn, formatDate, formatRelativeTime, getInitials, truncateText } from "@/lib/utils";
+import { interviewService, resolveAssetUrl, resumeService } from "@/services/api";
+import { cn, formatRelativeTime, getInitials } from "@/lib/utils";
 
 interface Props {
-  onMenuClick: () => void;
   title?: string;
 }
 
-type ActivePanel = "search" | "notifications" | null;
-
-interface SearchResult {
-  id: string;
-  title: string;
-  subtitle: string;
-  meta: string;
-  href: string;
-  kind: "session" | "question";
-}
+type ActivePanel = "notifications" | "profile" | null;
 
 interface NotificationItem {
   id: string;
@@ -37,6 +42,24 @@ interface NotificationItem {
   kind: "interview" | "resume" | "suggestion";
 }
 
+const featureNavItems = [
+  { href: "/resume/upload", label: "Upload Resume", icon: Upload },
+  { href: "/resume/builder", label: "Resume Builder", icon: Wand2 },
+  { href: "/interview", label: "Interview", icon: Mic },
+] as const;
+
+const authNavItems = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  ...featureNavItems,
+] as const;
+
+// Extra dropdown links in the "More" area of the profile panel
+const moreLinks = [
+  { href: "/cover-letter", label: "Cover Letter AI" },
+  { href: "/resume/match", label: "Job Matcher" },
+] as const;
+
+
 const panelMotion = {
   initial: { opacity: 0, y: -8, scale: 0.98 },
   animate: { opacity: 1, y: 0, scale: 1 },
@@ -44,32 +67,46 @@ const panelMotion = {
   transition: { duration: 0.18, ease: "easeOut" },
 };
 
-export function Navbar({ onMenuClick, title = "Dashboard" }: Props) {
+export function Navbar({ title = "Dashboard" }: Props) {
   const pathname = usePathname();
+  const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
-  const { user } = useAuthStore();
+  const { user, isAuthenticated, initAuth, logout } = useAuthStore();
 
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
-  const [query, setQuery] = useState("");
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [resumeHistory, setResumeHistory] = useState<HistoryItem[]>([]);
   const [sessions, setSessions] = useState<SessionResponse[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   useEffect(() => {
+    // Self-initialize auth from localStorage on any page using Navbar
+    // No-op if already hydrated (guard is in the store)
+    initAuth();
     setActivePanel(null);
-    setQuery("");
+    setMobileOpen(false);
   }, [pathname]);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
         setActivePanel(null);
+        setMobileOpen(false);
       }
     };
 
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
+
+  useEffect(() => {
+    if (activePanel !== "notifications" || !isAuthenticated) {
+      return;
+    }
+
+    void loadActivity();
+  }, [activePanel, isAuthenticated]);
 
   const loadActivity = async () => {
     setActivityLoading(true);
@@ -82,116 +119,33 @@ export function Navbar({ onMenuClick, title = "Dashboard" }: Props) {
       setResumeHistory(resumeResponse.data);
       setSessions(sessionResponse.data);
     } catch {
-      toast.error("Failed to load search and notification data");
+      toast.error("Failed to load notifications");
     } finally {
       setActivityLoading(false);
     }
   };
 
-  const openPanel = async (panel: ActivePanel, allowToggle = true) => {
-    const nextPanel = allowToggle && activePanel === panel ? null : panel;
-    setActivePanel(nextPanel);
-
-    if (nextPanel) {
-      await loadActivity();
-    }
+  const handleLogout = () => {
+    // Show confirmation dialog instead of immediately logging out
+    setActivePanel(null);
+    setShowLogoutConfirm(true);
   };
 
-  const analyzedResumes = useMemo(
-    () => resumeHistory.filter((item) => item.analysisId && item.analyzedAt),
-    [resumeHistory]
-  );
+  const confirmLogout = () => {
+    setShowLogoutConfirm(false);
+    logout();
+    toast.success("Signed out successfully");
+    router.push("/");
+  };
 
-  const searchResults = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    const results = new Map<string, SearchResult>();
-
-    const addResult = (result: SearchResult) => {
-      if (!results.has(result.id)) {
-        results.set(result.id, result);
-      }
-    };
-
-    const relevantSessions = normalized ? sessions : sessions.slice(0, 5);
-
-    relevantSessions.forEach((session) => {
-      const sessionText = [session.sessionTitle, session.resumeFileName].filter(Boolean).join(" ").toLowerCase();
-      if (!normalized || sessionText.includes(normalized)) {
-        addResult({
-          id: `session-${session.id}`,
-          title: session.sessionTitle,
-          subtitle: session.resumeFileName || "Interview session",
-          meta: formatDate(session.createdAt),
-          href: `/interview/history?sessionId=${session.id}`,
-          kind: "session",
-        });
-      }
-
-      (session.qaList || []).forEach((qa, index) => {
-        const questionText = `${qa.question} ${qa.answer || ""}`.toLowerCase();
-        if (normalized && questionText.includes(normalized)) {
-          addResult({
-            id: `question-${session.id}-${index}`,
-            title: truncateText(qa.question, 90),
-            subtitle: session.sessionTitle,
-            meta: qa.skipped ? "Skipped question" : "Question match",
-            href: `/interview/history?sessionId=${session.id}`,
-            kind: "question",
-          });
-        }
-      });
-    });
-
-    return Array.from(results.values()).slice(0, 8);
-  }, [query, sessions]);
-
-  const notifications = useMemo<NotificationItem[]>(() => {
-    const items: NotificationItem[] = [];
-
-    sessions.slice(0, 3).forEach((session) => {
-      items.push({
-        id: `interview-${session.id}`,
-        title: "Interview completed",
-        body: `${session.sessionTitle} is ready to review with ${session.questionsAnswered} answered questions.`,
-        href: `/interview/history?sessionId=${session.id}`,
-        date: session.createdAt,
-        kind: "interview",
-      });
-    });
-
-    analyzedResumes.slice(0, 3).forEach((resume) => {
-      items.push({
-        id: `resume-${resume.analysisId}`,
-        title: "Resume analyzed",
-        body: `${resume.fileName} received an ATS score of ${resume.atsScore ?? "--"}.`,
-        href: `/resume/analysis?id=${resume.analysisId}`,
-        date: resume.analyzedAt as string,
-        kind: "resume",
-      });
-
-      items.push({
-        id: `suggestion-${resume.analysisId}`,
-        title: "New suggestions available",
-        body: `Quick practice prompts and tailored improvements are ready for ${resume.fileName}.`,
-        href: `/resume/analysis?id=${resume.analysisId}`,
-        date: resume.analyzedAt as string,
-        kind: "suggestion",
-      });
-    });
-
-    return items
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 6);
-  }, [analyzedResumes, sessions]);
-
-  const renderAvatar = (size = "h-8 w-8") => {
+  const renderAvatar = (sizeClass = "h-7 w-7") => {
     if (user?.profilePicture) {
       return (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={user.profilePicture}
+          src={resolveAssetUrl(user.profilePicture)}
           alt={user.name}
-          className={cn(size, "rounded-full border border-white/10 object-cover")}
+          className={cn(sizeClass, "rounded-xl object-cover")}
         />
       );
     }
@@ -199,155 +153,324 @@ export function Navbar({ onMenuClick, title = "Dashboard" }: Props) {
     return (
       <div
         className={cn(
-          size,
-          "flex items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-xs font-bold text-white"
+          sizeClass,
+          "flex items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-cyan-500 text-xs font-bold text-white"
         )}
       >
-        {user ? getInitials(user.name) : "?"}
+        {getInitials(user?.name || "U")}
       </div>
     );
   };
 
-  const iconButtonClass =
-    "relative flex h-10 w-10 items-center justify-center rounded-2xl border border-white/8 bg-white/5 text-slate-300 transition-all duration-200 hover:border-cyan-400/30 hover:bg-cyan-500/10 hover:text-white";
+  const notifications = useMemo<NotificationItem[]>(() => {
+    const items: NotificationItem[] = [];
+
+    sessions.slice(0, 3).forEach((session) => {
+      items.push({
+        id: `session-${session.id}`,
+        title: "Interview session complete",
+        body: `"${session.sessionTitle}" — ${session.questionsAnswered} questions answered.`,
+        href: `/interview/history?sessionId=${session.id}`,
+        date: session.createdAt,
+        kind: "interview",
+      });
+    });
+
+    resumeHistory
+      .filter((item) => item.analysisId && item.analyzedAt)
+      .slice(0, 3)
+      .forEach((resume) => {
+        items.push({
+          id: `resume-${resume.analysisId}`,
+          title: "Resume analyzed",
+          body: `${resume.fileName} received an ATS score of ${resume.atsScore ?? "--"}.`,
+          href: `/resume/analysis?id=${resume.analysisId}`,
+          date: resume.analyzedAt as string,
+          kind: "resume",
+        });
+        items.push({
+          id: `suggestion-${resume.analysisId}`,
+          title: "New suggestions available",
+          body: `Improvements and tailored practice prompts are ready for ${resume.fileName}.`,
+          href: `/resume/analysis?id=${resume.analysisId}`,
+          date: resume.analyzedAt as string,
+          kind: "suggestion",
+        });
+      });
+
+    return items
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 6);
+  }, [resumeHistory, sessions]);
+
+  const navItems = isAuthenticated ? authNavItems : featureNavItems;
 
   return (
-    <div ref={rootRef} className="relative sticky top-0 z-30 border-b border-white/6 bg-slate-950/80 backdrop-blur-xl">
-      <div className="flex h-16 items-center gap-3 px-4 sm:px-5 lg:px-6">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <button onClick={onMenuClick} className={cn(iconButtonClass, "lg:hidden")}>
-            <Menu className="h-5 w-5" />
-          </button>
-          <div className="min-w-0">
-            <p className="inline-flex items-center gap-2 truncate text-sm font-semibold text-white sm:text-base">
-              {title}
-              <ArrowRight className="h-4 w-4 shrink-0 text-cyan-400" />
-            </p>
-            <p className="hidden text-xs text-slate-500 md:block">{BRAND.name}</p>
+    <div
+      ref={rootRef}
+      className="relative sticky top-0 z-30 border-b border-white/8 bg-slate-950/90 shadow-md shadow-slate-950/40 backdrop-blur-xl"
+    >
+      {/* ── Main bar ── */}
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-10">
+
+        {/* Logo */}
+        <Link
+          href={isAuthenticated ? "/dashboard" : "/"}
+          className="flex items-center gap-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 rounded-xl group"
+        >
+          {/* Logo wrapper — dark pill with violet/cyan glow, crisp shadow */}
+          <div className="relative flex-shrink-0">
+            {/* Outer ambient glow — grows on hover */}
+            <div className="absolute -inset-[3px] rounded-2xl bg-gradient-to-br from-violet-500/40 via-indigo-500/20 to-cyan-500/30 blur-[7px] opacity-80 group-hover:opacity-100 group-hover:blur-[10px] transition-all duration-300" />
+            {/* Inner dark pill — gives logo a clean backdrop on the dark navbar */}
+            <div className="relative rounded-xl bg-gradient-to-b from-slate-800 to-slate-900 p-[4px] ring-1 ring-white/[0.12] shadow-[0_2px_12px_rgba(109,40,217,0.35),0_1px_3px_rgba(0,0,0,0.6)] group-hover:ring-violet-400/40 group-hover:shadow-[0_4px_20px_rgba(109,40,217,0.5),0_1px_4px_rgba(0,0,0,0.7)] transition-all duration-300">
+              <Image
+                src="/logo.png"
+                alt={`${BRAND.name} logo`}
+                width={40}
+                height={40}
+                className="h-9 w-9 sm:h-10 sm:w-10 object-contain rounded-lg"
+              />
+            </div>
           </div>
-        </div>
-
-        <div className="relative hidden w-full max-w-[20rem] md:block">
-          <div className="flex h-11 items-center gap-3 rounded-2xl border border-white/8 bg-white/5 px-4 transition-all duration-200 focus-within:bg-white/6">
-            <Search className="h-4 w-4 text-slate-400" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onFocus={() => openPanel("search", false)}
-              placeholder="Search interviews and questions..."
-              className="h-full w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
-            />
+          <div>
+            <BrandWordmark className="text-[1.25rem] sm:text-[1.4rem]" />
+            <p className="hidden text-[10px] text-slate-500 sm:block">Premium AI interview prep</p>
           </div>
+        </Link>
 
-          <AnimatePresence>
-            {activePanel === "search" && (
-              <motion.div
-                {...panelMotion}
-                className="absolute left-0 right-0 top-[calc(100%+12px)] overflow-hidden rounded-3xl border border-white/8 bg-slate-950/95 shadow-2xl shadow-black/30"
-              >
-                <div className="border-b border-white/6 px-4 py-3">
-                  <p className="text-sm font-medium text-white">Search previous interviews</p>
-                  <p className="text-xs text-slate-500">Find sessions and question matches instantly.</p>
-                </div>
-
-                {activityLoading ? (
-                  <LoadingPanelCopy label="Loading activity..." />
-                ) : searchResults.length === 0 ? (
-                  <EmptyPanelCopy label="No interview history matched your search." />
-                ) : (
-                  <div className="max-h-[380px] overflow-y-auto p-2">
-                    {searchResults.map((result) => (
-                      <Link
-                        key={result.id}
-                        href={result.href}
-                        onClick={() => setActivePanel(null)}
-                        className="flex items-start gap-3 rounded-2xl px-3 py-3 transition-colors hover:bg-white/5"
-                      >
-                        <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl border border-white/8 bg-white/5">
-                          {result.kind === "session" ? (
-                            <Mic className="h-4 w-4 text-cyan-400" />
-                          ) : (
-                            <Search className="h-4 w-4 text-violet-400" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-white">{result.title}</p>
-                          <p className="truncate text-sm text-slate-400">{result.subtitle}</p>
-                          <p className="mt-1 text-xs text-slate-500">{result.meta}</p>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
+        {/* Desktop nav — hidden below lg */}
+        <div className="hidden items-center gap-0.5 lg:flex">
+          {navItems.map((item) => {
+            const active = isActiveRoute(pathname, item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium transition-all duration-200",
+                  active ? "bg-white/10 text-white" : "text-slate-300 hover:bg-white/6 hover:text-white"
                 )}
-              </motion.div>
-            )}
-          </AnimatePresence>
+              >
+                <item.icon className={cn("h-3.5 w-3.5 shrink-0", active ? "text-violet-300" : "")} />
+                {item.label}
+              </Link>
+            );
+          })}
         </div>
 
-        {/* mysql://root:tJmCRVhfwGtJSbhDbOpvebpXbfOPSIgN@maglev.proxy.rlwy.net:37589/railway */}
-
+        {/* Right side */}
         <div className="flex items-center gap-2">
-          <button onClick={() => openPanel("search")} className={cn(iconButtonClass, "md:hidden")}>
-            <Search className="h-5 w-5" />
+
+          {/* Hamburger — shows only below lg, ONLY for nav links */}
+          <button
+            onClick={() => setMobileOpen((current) => !current)}
+            className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/5 text-slate-300 transition-all duration-200 hover:border-white/20 hover:text-white lg:hidden"
+            aria-label="Toggle navigation"
+          >
+            {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
 
-          <button onClick={() => openPanel("notifications")} className={iconButtonClass}>
-            <Bell className="h-5 w-5" />
-            {notifications.length > 0 && (
-              <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-cyan-400 ring-2 ring-slate-950" />
-            )}
-          </button>
+          {isAuthenticated ? (
+            <>
+              {/* Notification bell */}
+              <div className="relative">
+                <button
+                  onClick={() => setActivePanel((current) => (current === "notifications" ? null : "notifications"))}
+                  className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/5 text-slate-300 transition-all duration-200 hover:border-cyan-400/30 hover:bg-cyan-500/10 hover:text-white"
+                  aria-label="View notifications"
+                >
+                  <Bell className="h-4 w-4" />
+                  {notifications.length > 0 && (
+                    <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-cyan-400 ring-2 ring-slate-950" />
+                  )}
+                </button>
 
-          <Link href="/profile" className={cn(iconButtonClass, "w-auto px-1.5")}>
-            {renderAvatar()}
-          </Link>
+                {/* ── Notifications panel ── */}
+                <AnimatePresence>
+                  {activePanel === "notifications" && (
+                    <motion.div
+                      {...panelMotion}
+                      className="absolute right-0 top-[calc(100%+8px)] z-40 w-[min(92vw,420px)] overflow-hidden rounded-3xl border border-white/8 bg-slate-950/95 shadow-2xl shadow-black/40 backdrop-blur-xl"
+                    >
+                      <div className="border-b border-white/6 px-4 py-3">
+                        <p className="text-sm font-medium text-white">Notifications</p>
+                        <p className="text-xs text-slate-500">Interview updates, resume analysis, and new guidance.</p>
+                      </div>
+
+                      {activityLoading ? (
+                        <LoadingPanelCopy label="Loading notifications..." />
+                      ) : notifications.length === 0 ? (
+                        <EmptyPanelCopy label="No notifications yet." />
+                      ) : (
+                        <div className="max-h-[420px] overflow-y-auto p-2">
+                          {notifications.map((item) => (
+                            <Link
+                              key={item.id}
+                              href={item.href}
+                              onClick={() => setActivePanel(null)}
+                              className="flex items-start gap-3 rounded-2xl px-3 py-3 transition-colors hover:bg-white/5"
+                            >
+                              <div
+                                className={cn(
+                                  "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border",
+                                  item.kind === "interview" && "border-cyan-500/20 bg-cyan-500/10",
+                                  item.kind === "resume" && "border-violet-500/20 bg-violet-500/10",
+                                  item.kind === "suggestion" && "border-emerald-500/20 bg-emerald-500/10"
+                                )}
+                              >
+                                {item.kind === "interview" && <Mic className="h-4 w-4 text-cyan-400" />}
+                                {item.kind === "resume" && <FileText className="h-4 w-4 text-violet-400" />}
+                                {item.kind === "suggestion" && <Sparkles className="h-4 w-4 text-emerald-400" />}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-3">
+                                  <p className="text-sm font-medium text-white">{item.title}</p>
+                                  <span className="shrink-0 text-xs text-slate-500">{formatRelativeTime(item.date)}</span>
+                                </div>
+                                <p className="mt-1 text-sm text-slate-400">{item.body}</p>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Profile button — clicking this ONLY opens the profile dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setActivePanel((current) => (current === "profile" ? null : "profile"))}
+                  className="flex h-9 items-center gap-1.5 rounded-xl border border-white/8 bg-white/5 px-2 text-slate-300 transition-all duration-200 hover:border-violet-400/30 hover:bg-violet-500/10 hover:text-white"
+                  aria-label="Open profile menu"
+                >
+                  {renderAvatar()}
+                  <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                </button>
+
+                {/* ── Profile dropdown — triggered ONLY by profile button ── */}
+                <AnimatePresence>
+                  {activePanel === "profile" && (
+                    <motion.div
+                      {...panelMotion}
+                      className="absolute right-0 top-[calc(100%+8px)] z-40 w-[min(92vw,260px)] overflow-hidden rounded-3xl border border-white/8 bg-slate-950/95 shadow-2xl shadow-black/40 backdrop-blur-xl"
+                    >
+                      {user && (
+                        <div className="flex items-center gap-3 border-b border-white/6 px-4 py-3.5">
+                          {renderAvatar("h-9 w-9")}
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-white">{user.name}</p>
+                            <p className="truncate text-xs text-slate-500">{user.email}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col gap-0.5 p-2">
+                        <Link
+                          href="/profile"
+                          onClick={() => setActivePanel(null)}
+                          className="rounded-2xl px-4 py-2.5 text-sm text-slate-100 transition-all hover:bg-white/5"
+                        >
+                          Profile
+                        </Link>
+                        <Link
+                          href="/history"
+                          onClick={() => setActivePanel(null)}
+                          className="rounded-2xl px-4 py-2.5 text-sm text-slate-100 transition-all hover:bg-white/5"
+                        >
+                          History
+                        </Link>
+                        {moreLinks.map((link) => (
+                          <Link
+                            key={link.href}
+                            href={link.href}
+                            onClick={() => setActivePanel(null)}
+                            className="rounded-2xl px-4 py-2.5 text-sm text-slate-400 transition-all hover:bg-white/5 hover:text-white"
+                          >
+                            {link.label}
+                          </Link>
+                        ))}
+                        <div className="mx-2 my-1 h-px bg-white/8" />
+                        <button
+                          type="button"
+                          onClick={handleLogout}
+                          className="rounded-2xl px-4 py-2.5 text-left text-sm font-medium text-rose-300 transition-all hover:bg-rose-500/10"
+                        >
+                          Sign Out
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </>
+          ) : (
+            <div className="hidden items-center gap-1.5 lg:flex">
+              <div className="mr-1 h-4 w-px bg-white/15" />
+              <Link href="/auth/login" className="px-3 py-2 text-sm text-slate-300 transition-colors hover:text-white">
+                Sign In
+              </Link>
+              <Link
+                href="/pricing"
+                className="rounded-2xl bg-gradient-to-r from-violet-600 to-cyan-600 px-4 py-2 text-sm font-medium text-white transition-all hover:from-violet-500 hover:to-cyan-500"
+              >
+                Pricing
+              </Link>
+            </div>
+          )}
         </div>
       </div>
 
+      {/* ── Mobile nav dropdown — ONLY nav links, no profile/history/signout ── */}
       <AnimatePresence>
-        {activePanel === "search" && (
-          <motion.div {...panelMotion} className="border-t border-white/6 px-4 py-4 md:hidden">
-            <div className="rounded-3xl border border-white/8 bg-white/5 px-4 py-3">
-              <div className="flex items-center gap-3">
-                <Search className="h-4 w-4 text-slate-400" />
-                <input
-                  autoFocus
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search interviews and questions..."
-                  className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-500"
-                />
-              </div>
-            </div>
+        {mobileOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.15 }}
+            className="border-t border-white/8 bg-slate-950/95 px-4 py-3 lg:hidden"
+          >
+            <div className="space-y-1">
+              {navItems.map((item) => {
+                const active = isActiveRoute(pathname, item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all duration-200",
+                      active
+                        ? "border-violet-500/25 bg-gradient-to-r from-violet-600/20 to-cyan-600/10 text-white"
+                        : "border-white/8 bg-white/4 text-slate-200 hover:border-cyan-400/20 hover:bg-cyan-500/10 hover:text-white"
+                    )}
+                  >
+                    <item.icon className={cn("h-4 w-4 shrink-0", active ? "text-violet-300" : "text-slate-400")} />
+                    {item.label}
+                  </Link>
+                );
+              })}
 
-            <div className="mt-3 rounded-3xl border border-white/8 bg-slate-950/95">
-              {activityLoading ? (
-                <LoadingPanelCopy label="Loading activity..." />
-              ) : searchResults.length === 0 ? (
-                <EmptyPanelCopy label="No matching interview history found." />
-              ) : (
-                <div className="max-h-[320px] overflow-y-auto p-2">
-                  {searchResults.map((result) => (
-                    <Link
-                      key={result.id}
-                      href={result.href}
-                      onClick={() => setActivePanel(null)}
-                      className="flex items-start gap-3 rounded-2xl px-3 py-3 transition-colors hover:bg-white/5"
-                    >
-                      <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl border border-white/8 bg-white/5">
-                        {result.kind === "session" ? (
-                          <Mic className="h-4 w-4 text-cyan-400" />
-                        ) : (
-                          <Search className="h-4 w-4 text-violet-400" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-white">{result.title}</p>
-                        <p className="truncate text-sm text-slate-400">{result.subtitle}</p>
-                        <p className="mt-1 text-xs text-slate-500">{result.meta}</p>
-                      </div>
-                    </Link>
-                  ))}
+              {/* Auth links for unauthenticated users only */}
+              {!isAuthenticated && (
+                <div className="mt-2 flex gap-2 border-t border-white/8 pt-2">
+                  <Link
+                    href="/auth/login"
+                    onClick={() => setMobileOpen(false)}
+                    className="flex-1 rounded-xl border border-white/8 bg-white/4 px-4 py-2.5 text-center text-sm text-slate-300 transition-colors hover:text-white"
+                  >
+                    Sign In
+                  </Link>
+                  <Link
+                    href="/pricing"
+                    onClick={() => setMobileOpen(false)}
+                    className="flex-1 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-600 px-4 py-2.5 text-center text-sm font-medium text-white"
+                  >
+                    Pricing
+                  </Link>
                 </div>
               )}
             </div>
@@ -355,54 +478,66 @@ export function Navbar({ onMenuClick, title = "Dashboard" }: Props) {
         )}
       </AnimatePresence>
 
+      {/* ── Sign Out Confirmation Dialog ── */}
       <AnimatePresence>
-        {activePanel === "notifications" && (
-          <motion.div
-            {...panelMotion}
-            className="absolute right-4 top-[calc(100%+12px)] z-40 w-[min(92vw,420px)] overflow-hidden rounded-3xl border border-white/8 bg-slate-950/95 shadow-2xl shadow-black/30"
-          >
-            <div className="border-b border-white/6 px-4 py-3">
-              <p className="text-sm font-medium text-white">Notifications</p>
-              <p className="text-xs text-slate-500">Interview updates, resume analysis, and new suggestions.</p>
-            </div>
-
-            {activityLoading ? (
-              <LoadingPanelCopy label="Loading notifications..." />
-            ) : notifications.length === 0 ? (
-              <EmptyPanelCopy label="No notifications yet." />
-            ) : (
-              <div className="max-h-[420px] overflow-y-auto p-2">
-                {notifications.map((item) => (
-                  <Link
-                    key={item.id}
-                    href={item.href}
-                    onClick={() => setActivePanel(null)}
-                    className="flex items-start gap-3 rounded-2xl px-3 py-3 transition-colors hover:bg-white/5"
-                  >
-                    <div
-                      className={cn(
-                        "mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl border",
-                        item.kind === "interview" && "border-cyan-500/20 bg-cyan-500/10",
-                        item.kind === "resume" && "border-violet-500/20 bg-violet-500/10",
-                        item.kind === "suggestion" && "border-emerald-500/20 bg-emerald-500/10"
-                      )}
-                    >
-                      {item.kind === "interview" && <Mic className="h-4 w-4 text-cyan-400" />}
-                      {item.kind === "resume" && <FileText className="h-4 w-4 text-violet-400" />}
-                      {item.kind === "suggestion" && <Sparkles className="h-4 w-4 text-emerald-400" />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-3">
-                        <p className="text-sm font-medium text-white">{item.title}</p>
-                        <span className="shrink-0 text-xs text-slate-500">{formatRelativeTime(item.date)}</span>
-                      </div>
-                      <p className="mt-1 text-sm text-slate-400">{truncateText(item.body, 120)}</p>
-                    </div>
-                  </Link>
-                ))}
+        {showLogoutConfirm && (
+          <>
+            {/* Backdrop — dark enough to isolate the dialog */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-50 backdrop-blur-md"
+              style={{ background: "rgba(0,0,0,0.82)" }}
+              onClick={() => setShowLogoutConfirm(false)}
+            />
+            {/* Dialog — fully opaque, no transparency */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.90, y: -16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.90, y: -16 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              className="fixed left-1/2 top-1/2 z-[51] w-[min(90vw,380px)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-3xl p-6"
+              style={{
+                background: "linear-gradient(145deg, #13151f, #0d0f1a)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                boxShadow: "0 32px 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.06)",
+              }}
+            >
+              {/* Icon */}
+              <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl"
+                style={{ background: "rgba(244,63,94,0.12)", border: "1px solid rgba(244,63,94,0.30)" }}>
+                <svg className="h-5 w-5 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6a2 2 0 012 2v1" />
+                </svg>
               </div>
-            )}
-          </motion.div>
+              <h3 className="mt-4 text-lg font-semibold text-white">Sign out?</h3>
+              <p className="mt-1.5 text-sm" style={{ color: "#94a3b8" }}>
+                You will be returned to the home page. Your data is safe and synced.
+              </p>
+              <div className="mt-6 flex gap-3">
+                <button
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="flex-1 rounded-2xl py-2.5 text-sm font-medium transition-all hover:text-white"
+                  style={{ border: "1px solid rgba(255,255,255,0.10)", color: "#94a3b8", background: "rgba(255,255,255,0.03)" }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.07)"}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.03)"}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmLogout}
+                  className="flex-1 rounded-2xl py-2.5 text-sm font-semibold text-white transition-all"
+                  style={{ background: "linear-gradient(135deg,#e11d48,#f43f5e)", boxShadow: "0 4px 16px rgba(244,63,94,0.35)" }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(244,63,94,0.5)"}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 16px rgba(244,63,94,0.35)"}
+                >
+                  Sign Out
+                </button>
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </div>

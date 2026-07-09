@@ -4,19 +4,21 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
 
 export function useAuth(requireAuth = true) {
-  const { user, isAuthenticated, initAuth, logout } = useAuthStore();
+  const { user, isAuthenticated, hydrated, initAuth, logout } = useAuthStore();
   const router = useRouter();
 
+  // Run initAuth once — subsequent calls are no-ops (hydrated guard in store)
   useEffect(() => {
     initAuth();
-  }, []);
+  }, [initAuth]);
 
   useEffect(() => {
-    if (requireAuth && !isAuthenticated && typeof window !== "undefined") {
-      const token = localStorage.getItem("token");
-      if (!token) router.replace("/auth/login");
+    // Only redirect after hydration is complete — avoids false redirect during SSR/first paint
+    if (!hydrated) return;
+    if (requireAuth && !isAuthenticated) {
+      router.replace("/auth/login");
     }
-  }, [isAuthenticated, requireAuth, router]);
+  }, [hydrated, isAuthenticated, requireAuth, router]);
 
-  return { user, isAuthenticated, logout };
+  return { user, isAuthenticated, hydrated, logout };
 }

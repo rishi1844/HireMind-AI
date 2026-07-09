@@ -2,10 +2,14 @@ export interface User {
   id: number;
   name: string;
   email: string;
+  provider?: string;
+  emailVerified?: boolean;
   mobile?: string;
   profilePicture?: string;
   headline?: string;
   bio?: string;
+  plan?: string;
+  planExpiresAt?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -16,10 +20,14 @@ export interface AuthResponse {
   id: number;
   name: string;
   email: string;
+  provider?: string;
+  emailVerified?: boolean;
   mobile?: string;
   profilePicture?: string;
   headline?: string;
   bio?: string;
+  plan?: string;
+  planExpiresAt?: string;
 }
 
 export interface ResumeResponse {
